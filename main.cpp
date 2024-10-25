@@ -3,10 +3,11 @@
 #include <vector>
 #include <cctype>
 #include <unordered_set>
+#include <iomanip>
 
 enum class TokenType {
     KEYWORD, IDENTIFIER, NUMBER, STRING_LITERAL, CHAR_LITERAL,
-    COMMENT, OPERATOR, DELIMITER, FUNCTION, WHITESPACE, UNKNOWN
+    COMMENT, OPERATOR, DELIMITER, FUNCTION_NAME, WHITESPACE, UNKNOWN
 };
 
 struct Token {
@@ -27,7 +28,7 @@ const std::unordered_set<std::string> delimiters = {
 bool isKeyword(const std::string& word) {
     static std::vector<std::string> keywords = {
             "def", "return", "if", "else", "elif", "while", "for",
-            "import", "from", "as", "class", "try", "except", "with", "in"
+            "import", "from", "as", "class", "try", "except", "with", "in", "print", "None"
     };
     for (const auto& keyword : keywords) {
         if (word == keyword) return true;
@@ -66,23 +67,77 @@ std::vector<Token> tokenize(const std::string& code) {
                 ++i;
             }
 
-            bool isFunction = false;
-            size_t j = i;
-            while (j < code.size() && isspace(code[j])) j++;
-            if (j < code.size() && code[j] == '(') {
-                isFunction = true;
-                while (j < code.size() && code[j] != ')') j++;
-                if (j < code.size()) j++;
-            }
-
-            if (isFunction) {
-                std::string functionCall = currentToken;
-                while (i < j) functionCall += code[i++];
-                tokens.push_back({TokenType::FUNCTION, functionCall});
-            } else if (isKeyword(currentToken)) {
+            if (isKeyword(currentToken)) {
                 tokens.push_back({TokenType::KEYWORD, currentToken});
+
+                size_t j = i;
+                while (j < code.size() && isspace(code[j])) {
+                    tokens.push_back({TokenType::WHITESPACE, std::string(1, code[j])});
+                    ++j;
+                }
+                if (j < code.size() && code[j] == '(') {
+                    i = j;
+                    tokens.push_back({TokenType::DELIMITER, "("});
+                    ++i;
+
+                    std::string argsCode;
+                    int parenthesesCount = 1;
+
+                    while (i < code.size() && parenthesesCount > 0) {
+                        if (code[i] == '(') parenthesesCount++;
+                        else if (code[i] == ')') parenthesesCount--;
+
+                        if (parenthesesCount > 0) {
+                            argsCode += code[i];
+                        }
+                        ++i;
+                    }
+
+                    if (!argsCode.empty()) {
+                        auto argTokens = tokenize(argsCode);
+                        tokens.insert(tokens.end(), argTokens.begin(), argTokens.end());
+                    }
+
+                    tokens.push_back({TokenType::DELIMITER, ")"});
+                }
             } else {
-                tokens.push_back({TokenType::IDENTIFIER, currentToken});
+                size_t j = i;
+                while (j < code.size() && isspace(code[j])) j++;
+                bool isFunction = (j < code.size() && code[j] == '(');
+
+                if (isFunction) {
+                    tokens.push_back({TokenType::FUNCTION_NAME, currentToken});
+
+                    while (i < j) {
+                        tokens.push_back({TokenType::WHITESPACE, std::string(1, code[i])});
+                        ++i;
+                    }
+
+                    tokens.push_back({TokenType::DELIMITER, "("});
+                    ++i;
+
+                    std::string argsCode;
+                    int parenthesesCount = 1;
+
+                    while (i < code.size() && parenthesesCount > 0) {
+                        if (code[i] == '(') parenthesesCount++;
+                        else if (code[i] == ')') parenthesesCount--;
+
+                        if (parenthesesCount > 0) {
+                            argsCode += code[i];
+                        }
+                        ++i;
+                    }
+
+                    if (!argsCode.empty()) {
+                        auto argTokens = tokenize(argsCode);
+                        tokens.insert(tokens.end(), argTokens.begin(), argTokens.end());
+                    }
+
+                    tokens.push_back({TokenType::DELIMITER, ")"});
+                } else {
+                    tokens.push_back({TokenType::IDENTIFIER, currentToken});
+                }
             }
             continue;
         }
@@ -90,8 +145,8 @@ std::vector<Token> tokenize(const std::string& code) {
         if (isdigit(ch) || (ch == '0' && i + 1 < code.size() && (code[i + 1] == 'x' || code[i + 1] == 'X'))) {
             currentToken.clear();
             if (ch == '0' && i + 1 < code.size() && (code[i + 1] == 'x' || code[i + 1] == 'X')) {
-                currentToken += code[i++]; // '0'
-                currentToken += code[i++]; // 'x' или 'X'
+                currentToken += code[i++];
+                currentToken += code[i++];
                 while (i < code.size() && isHexDigit(code[i])) {
                     currentToken += code[i++];
                 }
@@ -175,23 +230,43 @@ std::vector<Token> tokenize(const std::string& code) {
 }
 
 void printTokens(const std::vector<Token>& tokens) {
+    const int columnWidth = 40;
+
+    std::cout << std::string(columnWidth * 2 + 3, '-') << '\n';
+    std::cout << '|' << std::setw(columnWidth) << std::left << " <lexeme>"
+              << '|' << std::setw(columnWidth) << std::left << " type"
+              << "|\n";
+    std::cout << std::string(columnWidth * 2 + 3, '-') << '\n';
+
     for (const auto& token : tokens) {
-        std::cout << "Token: " << token.value << " (";
-        switch (token.type) {
-            case TokenType::KEYWORD: std::cout << "KEYWORD"; break;
-            case TokenType::IDENTIFIER: std::cout << "IDENTIFIER"; break;
-            case TokenType::NUMBER: std::cout << "NUMBER"; break;
-            case TokenType::STRING_LITERAL: std::cout << "STRING_LITERAL"; break;
-            case TokenType::CHAR_LITERAL: std::cout << "CHAR_LITERAL"; break;
-            case TokenType::COMMENT: std::cout << "COMMENT"; break;
-            case TokenType::OPERATOR: std::cout << "OPERATOR"; break;
-            case TokenType::DELIMITER: std::cout << "DELIMITER"; break;
-            case TokenType::FUNCTION: std::cout << "FUNCTION"; break;
-            case TokenType::WHITESPACE: std::cout << "WHITESPACE"; break;
-            default: std::cout << "UNKNOWN"; break;
+        std::string lexeme;
+        if (token.type == TokenType::WHITESPACE) {
+            lexeme = "<[space]>";
+        } else {
+            lexeme = "<" + token.value + ">";
         }
-        std::cout << ")\n";
+
+        std::string tokenType;
+        switch (token.type) {
+            case TokenType::KEYWORD: tokenType = "KEYWORD"; break;
+            case TokenType::IDENTIFIER: tokenType = "IDENTIFIER"; break;
+            case TokenType::NUMBER: tokenType = "NUMBER"; break;
+            case TokenType::STRING_LITERAL: tokenType = "STRING_LITERAL"; break;
+            case TokenType::CHAR_LITERAL: tokenType = "CHAR_LITERAL"; break;
+            case TokenType::COMMENT: tokenType = "COMMENT"; break;
+            case TokenType::OPERATOR: tokenType = "OPERATOR"; break;
+            case TokenType::DELIMITER: tokenType = "DELIMITER"; break;
+            case TokenType::FUNCTION_NAME: tokenType = "FUNCTION_NAME"; break;
+            case TokenType::WHITESPACE: tokenType = "WHITESPACE"; break;
+            default: tokenType = "UNKNOWN"; break;
+        }
+
+        std::cout << '|' << " " << std::setw(columnWidth - 1) << std::left << lexeme
+                  << '|' << " " << std::setw(columnWidth - 1) << std::left << tokenType
+                  << "|\n";
     }
+
+    std::cout << std::string(columnWidth * 2 + 3, '-') << '\n';
 }
 
 int main() {
